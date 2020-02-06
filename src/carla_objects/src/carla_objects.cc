@@ -10,10 +10,17 @@
 #include "nav_msgs/Odometry.h"
 #include "autoware_msgs/DetectedObjectArray.h"
 #include "derived_object_msgs/ObjectArray.h"
+#include "geometry_msgs/PointStamped.h"
 
 #include <message_filters/subscriber.h>
 #include <message_filters/synchronizer.h>
 #include <message_filters/sync_policies/approximate_time.h>
+
+// #include <tf/transform_listener.h>
+#include <tf2_ros/transform_listener.h>
+#include <tf2_geometry_msgs/tf2_geometry_msgs.h>
+#include <geometry_msgs/TransformStamped.h>
+#include <geometry_msgs/PointStamped.h>
 
 #define _USE_MESSAGE_FILTERS_SYNC_
 
@@ -134,6 +141,8 @@ public:
         pub_autoware_objects_ = nh_.advertise<autoware_msgs::DetectedObjectArray>(
             pub_objects_topic_, 1);
 
+        tf_listener_ptr_ = new tf2_ros::TransformListener(tf_buffer_);
+
         for (int i=0; i<12; i++) {
             std_msgs::ColorRGBA tmp_color;
             tmp_color.r = objects_color_rgba[i][0];
@@ -149,6 +158,7 @@ public:
         delete obj_sub_;
         delete sync_;
 #endif // _USE_MESSAGE_FILTERS_SYNC_
+        delete tf_listener_ptr_;
     }
 
 #ifdef _USE_MESSAGE_FILTERS_SYNC_
@@ -190,6 +200,8 @@ private:
     double roi_range_delta_;
     std::vector<std_msgs::ColorRGBA> color_rgba_;
 
+    tf2_ros::Buffer tf_buffer_;
+    tf2_ros::TransformListener* tf_listener_ptr_;
 };
 #ifdef _USE_MESSAGE_FILTERS_SYNC_
 void CarlaObjectsApp::sync_callback(const nav_msgs::Odometry::ConstPtr& pOdom, 
@@ -206,10 +218,12 @@ void CarlaObjectsApp::sync_callback(const nav_msgs::Odometry::ConstPtr& pOdom,
 void CarlaObjectsApp::objects_callback(
     const derived_object_msgs::ObjectArray::ConstPtr& objects) {
     std::cout << "objects_callback" << std::endl;
+    //TODO:
 }
 void CarlaObjectsApp::odometry_callback( 
     const nav_msgs::Odometry::ConstPtr& self_odometry) {
     std::cout << "odometry_callback" << std::endl;
+    //TODO:
 }
 #endif // _USE_MESSAGE_FILTERS_SYNC_
 
@@ -219,18 +233,15 @@ void CarlaObjectsApp::process(const derived_object_msgs::ObjectArray& in_objects
     autoware_msgs::DetectedObjectArray detected_objects;
     detected_objects.header = in_objects.header;
     // 
-    std::stringstream ss;
-    ss << "[";
-
     #define X_BOTTOM 0
     #define X_TOP    1
     #define Y_BOTTOM 2
     #define Y_TOP    3
     double boundings[4];
-    boundings[X_BOTTOM] = self_odometry.pose.pose.position.x - roi_range_x_;
-    boundings[X_TOP] = self_odometry.pose.pose.position.x + roi_range_x_;
-    boundings[Y_BOTTOM] = self_odometry.pose.pose.position.y - roi_range_y_;
-    boundings[Y_TOP] = self_odometry.pose.pose.position.y + roi_range_y_;
+    boundings[X_BOTTOM] = self_odometry.pose.pose.position.x - roi_range_distance_;
+    boundings[X_TOP] = self_odometry.pose.pose.position.x + roi_range_distance_;
+    boundings[Y_BOTTOM] = self_odometry.pose.pose.position.y - roi_range_distance_;
+    boundings[Y_TOP] = self_odometry.pose.pose.position.y + roi_range_distance_;
 
     for (auto &obj : in_objects.objects) {
         if (obj.pose.position.x < boundings[X_BOTTOM] ||
@@ -245,6 +256,63 @@ void CarlaObjectsApp::process(const derived_object_msgs::ObjectArray& in_objects
             obj.pose.position.y > self_odometry.pose.pose.position.y - roi_range_delta_ ) {
             continue;
         }
+
+// #define _BROADCAST_VELODYNE_TF_ 1
+#ifdef _BROADCAST_VELODYNE_TF_
+        tf::TransformListener listener;
+        geometry_msgs::PointStamped point1; // frame: map
+        point1.header = obj.header;
+        point1.point.x = obj.pose.position.x;
+        point1.point.y = obj.pose.position.y;
+        point1.point.z = obj.pose.position.z;
+        geometry_msgs::PointStamped point2; // frame: lidar
+        try {
+            listener.transformPoint("hero/lidar/lidar1", point1, point2);
+        } catch (tf::TransformException &ex) {
+            ROS_ERROR("%s",ex.what());
+            ros::Duration(1.0).sleep();
+        }
+#endif // _BROADCAST_VELODYNE_TF_
+
+        geometry_msgs::TransformStamped transformStamped;
+        geometry_msgs::PointStamped point_map, point_velo;
+        try{
+            transformStamped = tf_buffer_.lookupTransform("map", "hero/lidar/lidar1",
+                ros::Time(0), ros::Duration(0.1));
+            point_map.header = obj.header;
+            point_map.point.x = obj.pose.position.x;
+            point_map.point.y = obj.pose.position.y;
+            point_map.point.z = obj.pose.position.z;
+            tf_buffer_.transform<geometry_msgs::PointStamped>(point_map, point_velo, 
+                "hero/lidar/lidar1", ros::Duration(0.1));
+            // ss << point_map.header.frame_id.c_str()
+            //     << " (" << point_map.point.x
+            //     << ", " << point_map.point.y
+            //     << ", " << point_map.point.z
+            //     << ") -> " << point_velo.header.frame_id.c_str()
+            //     << " (" << point_velo.point.x
+            //     << ", " << point_velo.point.y
+            //     << ", " << point_velo.point.z 
+            //     << ")" << std::endl; 
+        } catch (tf2::TransformException &ex) {
+            ROS_WARN("%s",ex.what());
+            ros::Duration(1.0).sleep();
+            continue;
+        }
+        // if (point_velo.point.x > roi_range_x_ || 
+        //     point_velo.point.x < -roi_range_x_ || 
+        //     point_velo.point.y > roi_range_y_ || 
+        //     point_velo.point.x < -roi_range_y_ ) {
+        //     continue;
+        // }
+
+        tf2::Quaternion q_orig, q_rot, q_new;
+        // Get the original orientation of 'commanded_pose'
+        tf2::convert(obj.pose.orientation, q_orig);
+        tf2::convert(transformStamped.transform.rotation , q_rot);
+        q_new = q_rot*q_orig;  // Calculate the new orientation
+        q_new.normalize();
+
         autoware_msgs::DetectedObject detected_object;
         detected_object.header = obj.header;
         // uint32                          id
@@ -257,9 +325,14 @@ void CarlaObjectsApp::process(const derived_object_msgs::ObjectArray& in_objects
             detected_object.color = color_rgba_[0];
         }
         detected_object.score = 1.0;
-        detected_object.space_frame = obj.header.frame_id;
+        detected_object.space_frame = point_velo.header.frame_id;
         // geometry_msgs/Pose              pose
-        detected_object.pose = obj.pose;
+        // detected_object.pose = obj.pose;
+        detected_object.pose.position.x = point_velo.point.x;
+        detected_object.pose.position.y = point_velo.point.y;
+        detected_object.pose.position.z = point_velo.point.z;
+        // Stuff the new rotation back into the pose. This requires conversion into a msg type
+        tf2::convert(q_new, detected_object.pose.orientation);
         // geometry_msgs/Vector3           dimensions
         if (obj.shape.type == obj.shape.BOX) {
             detected_object.dimensions.x = obj.shape.dimensions[obj.shape.BOX_X];
@@ -271,8 +344,10 @@ void CarlaObjectsApp::process(const derived_object_msgs::ObjectArray& in_objects
         detected_object.variance.y = 0.0;
         detected_object.variance.z = 0.0;
         // geometry_msgs/Twist             velocity
+        //TODO: 
         detected_object.velocity = obj.twist;
         // geometry_msgs/Twist             acceleration
+        //TODO: 
         detected_object.acceleration.linear = obj.accel.linear;
         detected_object.acceleration.angular = obj.accel.angular;
         // sensor_msgs/PointCloud2         pointcloud
@@ -289,10 +364,24 @@ void CarlaObjectsApp::process(const derived_object_msgs::ObjectArray& in_objects
         detected_object.valid = true;
 
         detected_objects.objects.push_back(detected_object);
-        ss << obj.id << " ";
+
+        std::stringstream ss;
+        ss << "[";
+        ss << obj.id ;
+        ss << "] " << detected_object.label << " " << detected_object.space_frame.c_str();
+        ss << "(" << detected_object.pose.position.x
+            << ", " << detected_object.pose.position.y
+            << ", " << detected_object.pose.position.z 
+            << ") (" << detected_object.pose.orientation.x
+            << ", " << detected_object.pose.orientation.y
+            << ", " << detected_object.pose.orientation.z
+            << ", " << detected_object.pose.orientation.w
+            << ") (" << detected_object.velocity.linear.x
+            << ", " << detected_object.velocity.linear.y
+            << ", " << detected_object.velocity.linear.z
+            << ")" << std::endl;
+        std::cout << ss.str() ;
     }
-    ss << "]";
-    std::cout << ss.str() << std::endl;
     pub_autoware_objects_.publish(detected_objects);
 }
 

@@ -4,7 +4,7 @@
     <arg name="pub_objects_topic" default="/carla/detected/objects" />
     <arg name="roi_range_distance" default="60.0" />
     <arg name="roi_range_x" default="50.0" />
-    <arg name="roi_range_y" default="50.0" />
+    <arg name="roi_range_y" default="5.0" />
     <arg name="roi_range_delta" default="0.5" />
 
     <node pkg="carla_objects" 
