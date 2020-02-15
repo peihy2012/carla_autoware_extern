@@ -5,6 +5,10 @@
 #include <string>
 #include <sstream>
 
+# include<ctime>
+# define  NUMMOD  1000
+# define  NUMDEV  10000.0
+
 #include "std_msgs/ColorRGBA.h"
 #include "std_msgs/Header.h"
 #include "nav_msgs/Odometry.h"
@@ -89,6 +93,9 @@ public:
         param_.param<std::string>("pub_objects_topic", 
             pub_objects_topic_, 
             "/carla/detected/objects");
+        param_.param<std::string>("pub_real_objects_topic", 
+            pub_real_objects_topic_, 
+            "/carla/real/objects");
         param_.param<double>("roi_range_distance", 
             roi_range_distance_, 
             60.0);
@@ -111,6 +118,9 @@ public:
         ROS_INFO("[%s] pub_objects_topic: %s", 
             __APP_NAME__, 
             pub_objects_topic_.c_str());
+        ROS_INFO("[%s] pub_real_objects_topic: %s", 
+            __APP_NAME__, 
+            pub_real_objects_topic_.c_str());
         ROS_INFO("[%s] roi_range_distance: %s", 
             __APP_NAME__, 
             std::to_string(roi_range_distance_).c_str());
@@ -140,10 +150,13 @@ public:
             1, &CarlaObjectsApp::objects_callback, this);
 #endif // _USE_MESSAGE_FILTERS_SYNC_
 
+        tf_listener_ptr_ = new tf2_ros::TransformListener(tf_buffer_);
+
         pub_autoware_objects_ = nh_.advertise<autoware_msgs::DetectedObjectArray>(
             pub_objects_topic_, 1);
+        pub_real_objects_ = nh_.advertise<autoware_msgs::DetectedObjectArray>(
+            pub_real_objects_topic_, 1);
 
-        tf_listener_ptr_ = new tf2_ros::TransformListener(tf_buffer_);
 
         for (int i=0; i<12; i++) {
             std_msgs::ColorRGBA tmp_color;
@@ -192,10 +205,14 @@ private:
 #endif // _USE_MESSAGE_FILTERS_SYNC_
 
     ros::Publisher pub_autoware_objects_;
+    ros::Publisher pub_real_objects_;
+    
 
     std::string sub_objects_topic_;
     std::string self_odometry_topic_;
     std::string pub_objects_topic_;
+    std::string pub_real_objects_topic_;
+
     double roi_range_distance_;
     double roi_range_x_;
     double roi_range_y_;
@@ -253,7 +270,9 @@ void CarlaObjectsApp::process(const derived_object_msgs::ObjectArray& in_objects
     q_rot.normalize();
 
     autoware_msgs::DetectedObjectArray detected_objects;
+    autoware_msgs::DetectedObjectArray real_objects;
     detected_objects.header = in_objects.header;
+    real_objects.header = in_objects.header;
     // 
     #define X_BOTTOM 0
     #define X_TOP    1
@@ -390,6 +409,25 @@ void CarlaObjectsApp::process(const derived_object_msgs::ObjectArray& in_objects
         detected_object.acceleration_reliable = true;
         detected_object.valid = true;
 
+        real_objects.objects.push_back(detected_object);
+
+        detected_object.pose.position.x *= 1 + (double)(rand() % NUMMOD) / NUMDEV;
+        detected_object.pose.position.y *= 1 + (double)(rand() % NUMMOD) / NUMDEV;
+        detected_object.pose.position.x *= 1 + (double)(rand() % NUMMOD) / NUMDEV;
+        detected_object.dimensions.x *= 1 + 2 * (double)(rand() % NUMMOD) / NUMDEV;
+        detected_object.dimensions.y *= 1 + (double)(rand() % NUMMOD) / NUMDEV;
+        detected_object.dimensions.z *= 1 + (double)(rand() % NUMMOD) / NUMDEV;
+        tf::Quaternion q_ori_lidar_tf;
+        tf::quaternionMsgToTF(detected_object.pose.orientation, q_ori_lidar_tf);
+        double roll, pitch, yaw;
+        tf::Matrix3x3(q_ori_lidar_tf).getRPY(roll, pitch, yaw);
+        yaw *= 1 + (double)(rand() % NUMMOD) / NUMDEV;
+        tf::Quaternion out_quaternion;
+        out_quaternion.setRPY(roll, pitch, yaw);
+        detected_object.pose.orientation.x = out_quaternion.getX();
+        detected_object.pose.orientation.y = out_quaternion.getY();
+        detected_object.pose.orientation.z = out_quaternion.getZ();
+        detected_object.pose.orientation.w = out_quaternion.getW();
         detected_objects.objects.push_back(detected_object);
 
         // std::stringstream ss;
@@ -409,10 +447,12 @@ void CarlaObjectsApp::process(const derived_object_msgs::ObjectArray& in_objects
         //     << ")" << std::endl;
         // std::cout << ss.str() ;
     }
+    pub_real_objects_.publish(real_objects);
     pub_autoware_objects_.publish(detected_objects);
 }
 
 int main (int argc, char** argv) {
+    srand(time(0));
     ros::init(argc, argv, __APP_NAME__);
     CarlaObjectsApp app;
     ros::spin();
