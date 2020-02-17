@@ -1,0 +1,26 @@
+<launch>
+    <arg name="self_odometry_topic" default="/carla/hero/odometry" />
+    <arg name="sub_objects_topic" default="/carla/objects" />
+    <!-- <arg name="pub_objects_topic" default="/carla/detected/objects" /> -->
+    <arg name="pub_objects_topic" default="/detection/lidar_detector/objects" />
+    <arg name="pub_real_objects_topic" default="/real/lidar_detector/objects" />
+    <arg name="roi_range_distance" default="60.0" />
+    <arg name="roi_range_x" default="50.0" />
+    <arg name="roi_range_y" default="5.0" />
+    <arg name="roi_range_delta" default="0.5" />
+
+    <node pkg="carla_objects" 
+        type="carla_objects" 
+        name="carla_objects" 
+        output="screen">
+        <param name="self_odometry_topic" value="$(arg self_odometry_topic)" />
+        <param name="sub_objects_topic" value="$(arg sub_objects_topic)" />
+        <param name="pub_objects_topic" value="$(arg pub_objects_topic)" />
+        <param name="pub_real_objects_topic" value="$(arg pub_real_objects_topic)" />
+        <param name="roi_range_distance" value="$(arg roi_range_distance)" />
+        <param name="roi_range_x" value="$(arg roi_range_x)" />
+        <param name="roi_range_y" value="$(arg roi_range_y)" />
+        <param name="roi_range_delta" value="$(arg roi_range_delta)" />
+    </node>
+  
+</launch>

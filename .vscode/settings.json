@@ -48,7 +48,11 @@
         "tuple": "cpp",
         "utility": "cpp",
         "fstream": "cpp",
-        "sstream": "cpp"
+        "sstream": "cpp",
+        "queue": "cpp",
+        "cstring": "cpp",
+        "list": "cpp",
+        "thread": "cpp"
     },
     "cmake.cmakePath": "C:\\CMake\\bin\\cmake",
     "files.eol": "\n"
