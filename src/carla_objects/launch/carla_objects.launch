@@ -11,8 +11,8 @@
 
     <node pkg="carla_objects" 
         type="carla_objects" 
-        name="carla_objects" 
-        output="screen">
+        name="carla_objects"> 
+       <!-- output="screen"> -->
         <param name="self_odometry_topic" value="$(arg self_odometry_topic)" />
         <param name="sub_objects_topic" value="$(arg sub_objects_topic)" />
         <param name="pub_objects_topic" value="$(arg pub_objects_topic)" />

@@ -1,0 +1,13 @@
+<launch>
+    <arg name="detected_objects_topic" default="/detection/object_tracker/objects" />
+    <arg name="real_objects_topic" default="/detection/lidar_real/objects" />
+
+    <node pkg="objects_compare" 
+        type="objects_compare" 
+        name="objects_compare" 
+        output="screen">
+        <param name="detected_objects_topic" value="$(arg detected_objects_topic)" />
+        <param name="real_objects_topic" value="$(arg real_objects_topic)" />
+    </node>
+  
+</launch>

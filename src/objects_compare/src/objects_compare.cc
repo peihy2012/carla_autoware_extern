@@ -95,7 +95,7 @@ ObjectsCompareApp::ObjectsCompareApp() {
     real_obj_sub_  = new message_filters::Subscriber<autoware_msgs::DetectedObjectArray>(nh_, 
         real_objects_topic_, 1);
     sync_ = new message_filters::Synchronizer<ObjectsSyncPolicy>(ObjectsSyncPolicy(10),
-        *detected_obj_sub_, *real_objects_topic_);
+        *detected_obj_sub_, *real_obj_sub_);
     sync_->registerCallback(boost::bind(&ObjectsCompareApp::sync_callback, 
         this, _1, _2));
 
@@ -122,7 +122,7 @@ ObjectsCompareApp::~ObjectsCompareApp() {
 //
 //
 void ObjectsCompareApp::sync_callback(const autoware_msgs::DetectedObjectArray::ConstPtr& detected_obj_ptr, 
-        const autoware_msgs::DetectedObjectArray::ConstPtr& real_obj_ptr); {
+    const autoware_msgs::DetectedObjectArray::ConstPtr& real_obj_ptr) {
     //TODO: 
     if (detected_obj_ptr == nullptr || real_obj_ptr == nullptr) {
         std::cout << "lost detected objects or real objects." << std::endl;
@@ -138,7 +138,10 @@ void ObjectsCompareApp::sync_callback(const autoware_msgs::DetectedObjectArray::
 //
 void ObjectsCompareApp::process(const autoware_msgs::DetectedObjectArray& detected_obj,
         const autoware_msgs::DetectedObjectArray& real_obj) {
-    
+
+    std::cout << "raw tracker size: " << detected_obj.objects.size() << std::endl;
+    std::cout << "raw real size: " << real_obj.objects.size()  << std::endl; 
+
     for (auto & obj : detected_obj.objects) {
         ele::Item item = {
             obj.header.stamp.toSec(),
@@ -150,8 +153,9 @@ void ObjectsCompareApp::process(const autoware_msgs::DetectedObjectArray& detect
         };
 
         detected_trajectory_list_.push(obj.id, item);
-        detected_trajectory_list_.pop();
+
     }
+    detected_trajectory_list_.pop();    
     for (auto & obj : real_obj.objects) {
         ele::Item item = {
             obj.header.stamp.toSec(),
@@ -163,12 +167,21 @@ void ObjectsCompareApp::process(const autoware_msgs::DetectedObjectArray& detect
         };
 
         real_trajectory_list_.push(obj.id, item);
-        real_trajectory_list_.pop();
+
     }
-    std::cout << "detected size: " << detected_trajectory_list_.size_ << std::endl;
-    std::cout << "real size: " << real_trajectory_list_.size_ << std::endl; 
-    std::cout << "real pose: " << real_trajectory_list_.trajectories_.back().items_.back().pose.x 
-        << " " << real_trajectory_list_.trajectories_.back().items_.back().pose.x << std::endl;
+    real_trajectory_list_.pop();    
+
+    std::cout << "tracker size: " << detected_trajectory_list_.size() << std::endl;
+    // for (auto & traj : detected_trajectory_list_.trajectories_) {
+    //     // if (!traj.empty())
+    //     std::cout << traj.id() << ": " << traj.size() << std::endl;
+    // }
+    std::cout << "real size: " << real_trajectory_list_.size() << std::endl; 
+    // if (!real_trajectory_list_.trajectories_.empty()) {
+    //     std::cout << "real pose: " << real_trajectory_list_.trajectories_.back().items_.back().pose.x 
+    //         << " " << real_trajectory_list_.trajectories_.back().items_.back().pose.x << std::endl;        
+    // }
+
 }
 
 int main (int argc, char** argv) {

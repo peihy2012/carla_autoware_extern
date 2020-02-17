@@ -71,6 +71,7 @@ public:
     Trajectory(): updated_(false), life_time_(0), lost_time_(0) {}
     Trajectory(const unsigned int id_in, T& item_in)
         : id_(id_in), updated_(true), life_time_(1), lost_time_(0) {
+        
         items_.push_back(item_in);
     }
     // ~Trajectory() {}
@@ -100,7 +101,9 @@ public:
     bool empty () {
         return items_.empty();
     }
-
+    size_t size () {
+        return items_.size();
+    }
     unsigned int id_;    
     bool updated_;
     unsigned int life_time_;
@@ -132,10 +135,16 @@ public:
             if (it->empty()) {
                 it = trajectories_.erase(it);
                 --size_;
+            } else {
+                ++it;                
             }
         }
     }
- 
+    
+    size_t size () {
+        return trajectories_.size();
+    }
+
     unsigned int size_;
     std::list<Trajectory<T, ItemMaxSize> > trajectories_;
 };
