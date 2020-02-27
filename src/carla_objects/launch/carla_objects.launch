@@ -8,6 +8,9 @@
     <arg name="roi_range_x" default="50.0" />
     <arg name="roi_range_y" default="5.0" />
     <arg name="roi_range_delta" default="0.5" />
+    <arg name="pose_deviation_delta" default="0.05" />
+    <arg name="dimension_deviation_delta" default="0.05" />
+    <arg name="angle_deviation_delta" default="0.05" />
 
     <node pkg="carla_objects" 
         type="carla_objects" 
@@ -21,6 +24,9 @@
         <param name="roi_range_x" value="$(arg roi_range_x)" />
         <param name="roi_range_y" value="$(arg roi_range_y)" />
         <param name="roi_range_delta" value="$(arg roi_range_delta)" />
+        <param name="pose_deviation_delta" value="$(arg pose_deviation_delta)" />
+        <param name="dimension_deviation_delta" value="$(arg dimension_deviation_delta)" />
+        <param name="angle_deviation_delta" value="$(arg angle_deviation_delta)" />
     </node>
   
 </launch>

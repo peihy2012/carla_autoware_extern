@@ -6,7 +6,7 @@
 #include <sstream>
 
 # include<ctime>
-# define  NUMMOD  1000
+# define  NUMMOD  10000
 # define  NUMDEV  10000.0
 
 #include "std_msgs/ColorRGBA.h"
@@ -32,7 +32,28 @@
 
 #define __APP_NAME__ "carla_objects"
 
+// #include <iostream>
+#include <random>
+#include <ctime>
 
+// std::mt19937 rnd(time(0));
+
+class RandomError {
+public:
+    RandomError() : random_gen_(time(0)){}
+    ~RandomError() {}
+    RandomError(time_t tm): random_gen_(time(0)) {}
+    uint_fast32_t gen() {
+        return random_gen_();
+    }
+    double error_rate () {
+        uint_fast32_t rndint = random_gen_();
+        int* rnd = reinterpret_cast<int*> (&rndint);
+        int unit = 0x7FFFFFFF;
+        return (double)(*rnd)/ (double)unit;
+    }
+    std::mt19937 random_gen_;
+};
 
 // uint8 OBJECT_DETECTED=0
 // uint8 OBJECT_TRACKED=1
@@ -98,16 +119,25 @@ public:
             "/carla/real/objects");
         param_.param<double>("roi_range_distance", 
             roi_range_distance_, 
-            60.0);
+            200.0);
         param_.param<double>("roi_range_x", 
             roi_range_x_, 
-            60.0);
+            100.0);
         param_.param<double>("roi_range_y", 
             roi_range_y_, 
             60.0);
         param_.param<double>("roi_range_delta", 
             roi_range_delta_, 
             0.5);
+        param_.param<double>("pose_deviation_delta", 
+            pose_deviation_delta_, 
+            0.05);
+        param_.param<double>("dimension_deviation_delta", 
+            dimension_deviation_delta_, 
+            0.05);
+        param_.param<double>("angle_deviation_delta", 
+            angle_deviation_delta_, 
+            0.05);
 
         ROS_INFO("[%s] self_odometry_topic: %s", 
             __APP_NAME__, 
@@ -133,6 +163,16 @@ public:
         ROS_INFO("[%s] roi_range_delta: %s", 
             __APP_NAME__, 
             std::to_string(roi_range_delta_).c_str());
+        ROS_INFO("[%s] pose_deviation_delta: %s", 
+            __APP_NAME__, 
+            std::to_string(pose_deviation_delta_).c_str());
+        ROS_INFO("[%s] dimension_deviation_delta: %s", 
+            __APP_NAME__, 
+            std::to_string(dimension_deviation_delta_).c_str());
+        ROS_INFO("[%s] angle_deviation_delta: %s", 
+            __APP_NAME__, 
+            std::to_string(angle_deviation_delta_).c_str());
+
 
 #ifdef _USE_MESSAGE_FILTERS_SYNC_
         odom_sub_ = new message_filters::Subscriber<nav_msgs::Odometry>(nh_, 
@@ -217,10 +257,15 @@ private:
     double roi_range_x_;
     double roi_range_y_;
     double roi_range_delta_;
+    double pose_deviation_delta_;
+    double dimension_deviation_delta_;
+    double angle_deviation_delta_;
     std::vector<std_msgs::ColorRGBA> color_rgba_;
 
     tf2_ros::Buffer tf_buffer_;
     tf2_ros::TransformListener* tf_listener_ptr_;
+
+    RandomError rnd_;
 };
 #ifdef _USE_MESSAGE_FILTERS_SYNC_
 void CarlaObjectsApp::sync_callback(const nav_msgs::Odometry::ConstPtr& pOdom, 
@@ -253,13 +298,6 @@ void CarlaObjectsApp::process(const derived_object_msgs::ObjectArray& in_objects
     try{
         transformStamped = tf_buffer_.lookupTransform( "hero/lidar/lidar1", "map",
             ros::Time(0), ros::Duration(0.1));
-        // point_map.header = obj.header;
-        // point_map.point.x = obj.pose.position.x;
-        // point_map.point.y = obj.pose.position.y;
-        // point_map.point.z = obj.pose.position.z;
-        // tf_buffer_.transform<geometry_msgs::PointStamped>(point_map, point_velo, 
-        //     "hero/lidar/lidar1", ros::Duration(0.1));
-
     } catch (tf2::TransformException &ex) {
         ROS_WARN("%s",ex.what());
         ros::Duration(1.0).sleep();
@@ -272,7 +310,9 @@ void CarlaObjectsApp::process(const derived_object_msgs::ObjectArray& in_objects
     autoware_msgs::DetectedObjectArray detected_objects;
     autoware_msgs::DetectedObjectArray real_objects;
     detected_objects.header = in_objects.header;
+    detected_objects.header.frame_id = "velodyne";
     real_objects.header = in_objects.header;
+    real_objects.header.frame_id = "velodyne";
     // 
     #define X_BOTTOM 0
     #define X_TOP    1
@@ -288,9 +328,10 @@ void CarlaObjectsApp::process(const derived_object_msgs::ObjectArray& in_objects
         if (obj.pose.position.x < boundings[X_BOTTOM] ||
             obj.pose.position.x > boundings[X_TOP] ||
             obj.pose.position.y < boundings[Y_BOTTOM] ||
-            obj.pose.position.y > boundings[X_TOP] ) {
+            obj.pose.position.y > boundings[Y_TOP] ) {
             continue;
         }
+
         if (obj.pose.position.x < self_odometry.pose.pose.position.x + roi_range_delta_ &&
             obj.pose.position.x > self_odometry.pose.pose.position.x - roi_range_delta_ &&
             obj.pose.position.y < self_odometry.pose.pose.position.y + roi_range_delta_ &&
@@ -298,40 +339,18 @@ void CarlaObjectsApp::process(const derived_object_msgs::ObjectArray& in_objects
             continue;
         }
 
-// #define _BROADCAST_VELODYNE_TF_ 1
-// #ifdef _BROADCAST_VELODYNE_TF_
-//         tf::TransformListener listener;
-//         geometry_msgs::PointStamped point1; // frame: map
-//         point1.header = obj.header;
-//         point1.point.x = obj.pose.position.x;
-//         point1.point.y = obj.pose.position.y;
-//         point1.point.z = obj.pose.position.z;
-//         geometry_msgs::PointStamped point2; // frame: lidar
-//         try {
-//             listener.transformPoint("hero/lidar/lidar1", point1, point2);
-//         } catch (tf::TransformException &ex) {
-//             ROS_ERROR("%s",ex.what());
-//             ros::Duration(1.0).sleep();
-//         }
-// #endif // _BROADCAST_VELODYNE_TF_
-
-
-        // if (point_velo.point.x > roi_range_x_ || 
-        //     point_velo.point.x < -roi_range_x_ || 
-        //     point_velo.point.y > roi_range_y_ || 
-        //     point_velo.point.x < -roi_range_y_ ) {
-        //     continue;
-        // }
-
-        // tf2::Quaternion q_orig, q_rot, q_new;
-        // // Get the original orientation of 'commanded_pose'
-        // tf2::convert(obj.pose.orientation, q_orig);
-        // tf2::convert(transformStamped.transform.rotation , q_rot);
-        // q_new = q_rot*q_orig;  // Calculate the new orientation
-        // q_new.normalize();
-
         autoware_msgs::DetectedObject detected_object;
+        tf2::doTransform (obj.pose, detected_object.pose, transformStamped);
+        if (detected_object.pose.position.x > roi_range_x_ || 
+            detected_object.pose.position.x < -roi_range_x_ || 
+            detected_object.pose.position.y > roi_range_y_ || 
+            detected_object.pose.position.y < -roi_range_y_ ) {
+            continue;
+        }
+
+        
         detected_object.header = obj.header;
+        detected_object.header.frame_id = "velodyne";
         // uint32                          id
         detected_object.id = obj.id;
         if (obj.object_classified && obj.classification < 12) {
@@ -342,8 +361,9 @@ void CarlaObjectsApp::process(const derived_object_msgs::ObjectArray& in_objects
             detected_object.color = color_rgba_[0];
         }
         detected_object.score = 1.0;
-        // detected_object.space_frame = point_velo.header.frame_id;
-        detected_object.space_frame = "hero/lidar/lidar1";
+        // detected_object.space_frame = obj.header.frame_id;
+        detected_object.space_frame = "velodyne";
+
         // geometry_msgs/Pose              pose
         // detected_object.pose = obj.pose;
         // detected_object.pose.position.x = point_velo.point.x;
@@ -351,11 +371,22 @@ void CarlaObjectsApp::process(const derived_object_msgs::ObjectArray& in_objects
         // detected_object.pose.position.z = point_velo.point.z;
         // Stuff the new rotation back into the pose. This requires conversion into a msg type
         // tf2::convert(q_new, detected_object.pose.orientation);
-        tf2::doTransform (obj.pose, detected_object.pose, transformStamped);
+        // tf2::doTransform (obj.pose, detected_object.pose, transformStamped);
+        // if (obj.pose.position.x > roi_range_x_ || 
+        //     obj.pose.position.x < -roi_range_x_ || 
+        //     obj.pose.position.y > roi_range_y_ || 
+        //     obj.pose.position.x < -roi_range_y_ ) {
+        //     continue;
+        // }
         // geometry_msgs/Vector3           dimensions
         if (obj.shape.type == obj.shape.BOX) {
-            detected_object.dimensions.x = obj.shape.dimensions[obj.shape.BOX_X];
-            detected_object.dimensions.y = obj.shape.dimensions[obj.shape.BOX_Y];
+            if( obj.shape.dimensions[obj.shape.BOX_X] > obj.shape.dimensions[obj.shape.BOX_Y] ) {
+                detected_object.dimensions.x = obj.shape.dimensions[obj.shape.BOX_X];
+                detected_object.dimensions.y = obj.shape.dimensions[obj.shape.BOX_Y];
+            } else {
+                detected_object.dimensions.x = obj.shape.dimensions[obj.shape.BOX_Y];
+                detected_object.dimensions.y = obj.shape.dimensions[obj.shape.BOX_X]; 
+            }
             detected_object.dimensions.z = obj.shape.dimensions[obj.shape.BOX_Z];
         }
         // geometry_msgs/Vector3           variance
@@ -404,24 +435,24 @@ void CarlaObjectsApp::process(const derived_object_msgs::ObjectArray& in_objects
         // bool                            pose_reliable
         detected_object.pose_reliable = true;
         // bool                            velocity_reliable
-        detected_object.velocity_reliable = true;
+        detected_object.velocity_reliable = false;
         // bool                            acceleration_reliable
-        detected_object.acceleration_reliable = true;
+        detected_object.acceleration_reliable = false;
         detected_object.valid = true;
 
         real_objects.objects.push_back(detected_object);
 
-        detected_object.pose.position.x *= 1 + (double)(rand() % NUMMOD) / NUMDEV;
-        detected_object.pose.position.y *= 1 + (double)(rand() % NUMMOD) / NUMDEV;
-        detected_object.pose.position.x *= 1 + (double)(rand() % NUMMOD) / NUMDEV;
-        detected_object.dimensions.x *= 1 + 2 * (double)(rand() % NUMMOD) / NUMDEV;
-        detected_object.dimensions.y *= 1 + (double)(rand() % NUMMOD) / NUMDEV;
-        detected_object.dimensions.z *= 1 + (double)(rand() % NUMMOD) / NUMDEV;
+        detected_object.pose.position.x *= 1 + pose_deviation_delta_ * rnd_.error_rate();
+        detected_object.pose.position.y *= 1 + pose_deviation_delta_ * rnd_.error_rate();
+        detected_object.pose.position.z *= 1 + pose_deviation_delta_ * rnd_.error_rate();
+        detected_object.dimensions.x *= 1 + dimension_deviation_delta_ * rnd_.error_rate();
+        detected_object.dimensions.y *= 1 + dimension_deviation_delta_ * rnd_.error_rate();
+        detected_object.dimensions.z *= 1 + dimension_deviation_delta_ * rnd_.error_rate();
         tf::Quaternion q_ori_lidar_tf;
         tf::quaternionMsgToTF(detected_object.pose.orientation, q_ori_lidar_tf);
         double roll, pitch, yaw;
         tf::Matrix3x3(q_ori_lidar_tf).getRPY(roll, pitch, yaw);
-        yaw *= 1 + (double)(rand() % NUMMOD) / NUMDEV;
+        yaw *= 1 + angle_deviation_delta_ * rnd_.error_rate();
         tf::Quaternion out_quaternion;
         out_quaternion.setRPY(roll, pitch, yaw);
         detected_object.pose.orientation.x = out_quaternion.getX();

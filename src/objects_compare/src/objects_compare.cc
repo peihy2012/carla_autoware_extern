@@ -15,6 +15,11 @@
 #include <message_filters/synchronizer.h>
 #include <message_filters/sync_policies/approximate_time.h>
 
+#include <opencv2/core.hpp>
+#include <opencv2/imgcodecs.hpp>
+#include <opencv2/highgui.hpp>
+#include "opencv2/imgproc.hpp"
+
 // #include "tf/transform_datatypes.h"
 // #include <tf/transform_listener.h>
 // #include <tf2_ros/transform_listener.h>
@@ -130,6 +135,49 @@ void ObjectsCompareApp::sync_callback(const autoware_msgs::DetectedObjectArray::
     }
     std::cout << "got both objects list." << std::endl;
     process(*detected_obj_ptr, *real_obj_ptr);
+}
+
+
+
+#define PI 3.141592653
+const double XRange = 100.0;
+const double YRange = 100.0;
+void drawVehicle (cv::Mat& img, ele::Item& item) {
+    cv::Point center = {img.size().width/2, img.size().height/2};
+    cv::Point image_range = {img.size().width/2, img.size().height/2};
+    double image_x_offset = (double)image_range.x * item.pose.y / YRange;
+    double image_y_offset = (double)image_range.y * item.pose.x / XRange;
+    cv::Point image_pose = {center.x - (int)image_x_offset, 
+                            center.y - (int)image_y_offset};
+    line(img, image_pose, image_pose, {255,0,0}, 3, 8, 0);
+    // cv::circle(img, image_pose, 10, {0,255,0}, 1, 8, 0);
+    double image_dimension_x_offset = (double)image_range.x * item.dimension.y / YRange;
+    double image_dimension_y_offset = (double)image_range.y * item.dimension.x / XRange;
+    cv::Point image_dim_offset = {(int)image_dimension_x_offset/2, 
+                                    (int)image_dimension_y_offset/2};
+    cv::Rect image_rect = cv::Rect(image_pose - image_dim_offset,
+                                   image_pose + image_dim_offset);
+    rectangle(img, image_rect, {0,0,255}, 2, 8, 0);
+
+	cv::RotatedRect box(image_pose, 
+                        cv::Size((int)image_dimension_x_offset, 
+                            (int)image_dimension_y_offset),
+                        -item.angle * 180.0 / PI);
+	cv::Point2f vertex[4];
+	box.points(vertex);
+
+	for (int i = 0; i < 4; i++) {
+		line(img, vertex[i], vertex[(i + 1) % 4], cv::Scalar(255, 255, 0), 2, CV_AA);
+	}
+
+	// std::vector<cv::Point> contour;
+	// for (int i = 0; i < 4; i++) {
+	// 	contour.push_back(vertex[i]);
+	// }
+	// std::vector<std::vector<cv::Point>> contours;
+	// contours.push_back(contour);
+	// cv::drawContours(img, contours, 0, cv::Scalar(255, 255, 0), 1);
+
 }
 
 
